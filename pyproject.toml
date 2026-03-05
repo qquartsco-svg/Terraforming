@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "terraforming-engine"
-version = "0.1.0"
+version = "0.2.0"
 description = "JOE → MOE → Cherubim 오케스트레이션 + TerraformingPlan 단일 패키지"
 readme = "README.md"
 license = { text = "MIT" }
