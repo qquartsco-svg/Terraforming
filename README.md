@@ -88,6 +88,22 @@ python -m terraforming_engine /path/to/snapshot.json
 
 README가 말하는 **방식 A 단일 패키지**가 동작하려면, 아래 구조와 엔트리포인트가 맞아야 한다. **루트에 파일을 평평하게(flat) 올리면 안 되고**, 반드시 **terraforming_engine/** 파이썬 패키지 디렉터리가 있어야 한다.
 
+**잘못된 배포(flat) — 이 상태면 동작 불가**
+
+- 루트에 `__init__.py`, `__main__.py`, `pyproject.toml` 등만 있고 **`terraforming_engine/` 폴더가 없음** → `from terraforming_engine import run_survey` / `python -m terraforming_engine` 구조 자체가 성립하지 않음.
+- 루트의 `__main__.py` 가 **Joe_Engine용 CLI**이거나, `__init__.py` 가 **Terraforming Engine용이 아님**(run_survey export 없음) → 엔트리포인트 불일치.
+- **joe_engine/**, **moe_engine/**, **cherubim_engine/** 디렉터리가 없음 → pipeline에서 import할 대상이 없어 JOE→MOE→Cherubim 호출 불가.
+- **pyproject.toml** 이 Terraforming Engine 것이 아님(예: 다른 프로젝트명·모듈명) → 패키지명/엔트리포인트가 README와 맞을 수 없음.
+
+**올바른 배포**
+
+- 이 리포를 **통째로** 클론하거나 압축 해제했을 때, **루트 바로 아래에 `terraforming_engine/` 폴더가 존재**해야 함.
+- `pyproject.toml` 에 `name = "terraforming-engine"` 이고, 패키지가 `terraforming_engine` 으로 찾아지도록 설정되어 있어야 함.
+- 배포 후 `python -c "from terraforming_engine import run_survey; print('OK')"` 가 에러 없이 동작해야 함.
+
+**배포 구조 점검 스크립트**  
+리포 루트에서 `bash check_deployment.sh` 를 실행하면, 위 조건이 만족되는지 확인한다. 실패 시 1을 반환하고 원인을 출력한다.
+
 **필수 디렉터리 구조**
 
 ```
