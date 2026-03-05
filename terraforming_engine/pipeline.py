@@ -1,5 +1,8 @@
 # pipeline.py — JOE → MOE → Cherubim 순차 오케스트레이션
 #
+# 설계 의도: "답을 제시"하는 것이 아니라, 스냅샷이 파이프라인을 흐르면서
+# 후보·리스크·에덴·권장 조치가 도출되게 만든다. 사용자가 탐사 결과를 따라가며
+# 답을 찾아보게 하는 탐색 엔진으로 동작한다.
 # 여기서만 3개 엔진을 호출. 엔진 간 상호 참조 원천 차단.
 # 흐름: 진단(JOE 거시 → MOE 미시) → 선정(Cherubim 에덴 후보) → 계획(Plan 권장 조치).
 
@@ -23,8 +26,9 @@ def run_survey(
     config_override: None | Dict[str, Any] = None,
 ) -> TerraformingReport:
     """
-    PlanetSnapshot 하나로 진단(JOE→MOE) → 선정(Cherubim) → 계획(Plan) 수행.
-    반환 report.config_used 에 사용된 설정을 담아 재현·감사 가능.
+    스냅샷이 파이프라인을 한 번 흐르면, 거시 평가 → 6도메인 리스크 → 에덴 후보 → 권장 조치가
+    순서대로 도출된다. "답을 고정 제시"가 아니라 탐사가 흘러가게 하여 사용자가 결과를 따라가며
+    답을 찾아보게 하는 구조. 반환 report.config_used 에 사용된 설정을 담아 재현·감사 가능.
     """
     cfg = dict(_config.CONFIG)
     if config_override:

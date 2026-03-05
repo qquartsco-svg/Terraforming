@@ -1,5 +1,7 @@
-# cherubim_engine — 에덴/정착 후보지 선정. Terraforming 내부.
+# cherubim_engine — 에덴/정착 후보지 도출. Terraforming 내부.
 # joe/moe import 금지. pipeline에서만 호출.
+# 설계 의도: MOE 리스크가 흐르면 거주 적합도로 변환되어, 에덴 후보와 선정 이유(reasoning)가
+# 도출되게 한다. 사용자가 "왜 이 후보인가"를 따라가며 답을 찾아보게 하는 탐색 엔진 역할.
 
 from __future__ import annotations
 
@@ -66,9 +68,8 @@ def find_sites(
     config: Any = None,
 ) -> EdenAssessment:
     """
-    스냅샷 + MOE 결과 → 에덴 후보지 선정.
-    MOE 6도메인 리스크를 거주 적합도로 변환해, 임계값 이상이면 후보로 넣고
-    best_site·score·reasoning을 채운다.
+    스냅샷 + MOE 결과가 흐르면, 6도메인 리스크가 거주 적합도로 변환되어
+    eden_threshold 이상인 경우 에덴 후보·score·reasoning이 도출된다.
     """
     domain_scores = getattr(moe_result, "domain_scores", None) or {}
     attribution = getattr(moe_result, "attribution", None) or {}

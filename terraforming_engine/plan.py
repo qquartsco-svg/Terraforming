@@ -1,7 +1,8 @@
 # plan.py — TerraformingPlan (환경 개선 정책)
 #
-# MOE domain_scores를 기준으로 대기 보강, 자기권 보조, 수권 안정화 등
-# 구체적 테라포밍 권장 조치를 룰 기반으로 생성. 수치 적분 없음.
+# MOE domain_scores가 흐르면서 임계치를 넘는 도메인에 대해 대기 보강, 자기권 보조,
+# 수권 안정화 등 권장 조치가 도출되도록 룰 기반으로 생성. "결론 고정 제시"보다
+# 탐사 결과를 따라가며 개입 포인트를 찾아보게 하는 용도. 수치 적분 없음.
 
 from __future__ import annotations
 
@@ -56,7 +57,7 @@ def make_plan(
     config: Any = None,
 ) -> TerraformingPlan:
     """
-    스냅샷 + JOE/MOE/Cherubim 결과 → TerraformingPlan.
+    스냅샷 + JOE/MOE/Cherubim 결과가 흐르면, domain_scores 기준으로 권장 조치가 도출된다.
     입력: snapshot(공통), joe_result(거시), moe_result(domain_scores 사용), cherubim_result(선택).
     룰: domain_scores[도메인] >= 0.5 이면 해당 권장 조치 추가; geophysics >= 0.6 이면 flag 추가.
     """
