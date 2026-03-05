@@ -1,6 +1,7 @@
 """
 Terraforming Engine CLI.
 실행: python -m terraforming_engine   또는  python -m terraforming_engine /path/to/snapshot.json
+패키지가 pip install 된 경우 그대로 동작. 리포 루트에서 -m 실행 시에는 상위 경로를 path에 넣어서 동작하도록 함.
 """
 from __future__ import annotations
 
@@ -8,7 +9,7 @@ import json
 import sys
 from pathlib import Path
 
-# 패키지 루트 = standalone_build/Terraforming_Engine
+# 패키지 루트 = 이 리포의 루트 (pyproject.toml 있는 곳). -m 실행 시 import 경로 보정용.
 _root = Path(__file__).resolve().parent.parent
 if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))

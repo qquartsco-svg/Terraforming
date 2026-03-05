@@ -1,208 +1,29 @@
-# Terraforming Engine — 최종 설계안 (방식 A)
+# Terraforming Engine — 방식 A 단일 패키지
 
-**JOE(거시) → MOE(미시) → Cherubim(선정) → Plan(개입)** 이 한 번에 이어지는 단일 독립 모듈.  
-각 엔진의 독립성을 유지한 채, 탐사가 **흐르면서** 거시 필터 → 미시 진단 → 거주지 후보 → 개입 가이드가 **나오도록** 설계되어 있다.
+스냅샷 하나가 파이프라인을 흐르며, 거시 필터(JOE) → 6도메인 리스크(MOE) → 에덴 후보(Cherubim) → 개입 가이드(Plan)가 순서대로 **도출**되도록 설계된 탐사 패키지. "답을 고정 제시"가 아니라 탐사가 흘러가게 하여 사용자가 결과를 따라가며 답을 찾아보게 하는 구조다.
 
-- **PlanetSnapshot 표준**: [PLANET_SNAPSHOT_SCHEMA.md](PLANET_SNAPSHOT_SCHEMA.md) — 전체 엔진 계약(키 정의·예시).
-- **서명·재현성**: [SIGNATURE.md](SIGNATURE.md) — GPG 태그, 재현 가능 빌드, 의존성 없음.
-
----
-
-## 탐색 엔진으로서의 목적
-
-이 엔진은 **“답을 동역학으로 제시”하는 것이 아니라, “답이 흘러가게 만드는 구조”**를 지향한다.  
-즉, **탐색이 흐르고** — 스냅샷이 파이프라인을 타고 지나가면서 — 후보가 걸러지고, 리스크가 드러나고, 에덴 후보와 권장 조치가 **도출**되도록 만든다.  
-그래서 **“결론을 주는 것”보다 “사용자가 탐사 결과를 따라가며 답을 찾아보게 하는 것”**에 목적이 더 크다.  
-README와 로직은 이 관점을 반영해, 사실을 확정하는 표현을 줄이고 **흐름·탐색** 위주로 서술한다.
+- **스키마**: [PLANET_SNAPSHOT_SCHEMA.md](PLANET_SNAPSHOT_SCHEMA.md) — 키 정의·예시.
+- **재현·서명**: [SIGNATURE.md](SIGNATURE.md) — config 기록, 재현 가능 빌드.
 
 ---
 
-## 이게 뭔가요? — 개념·수식·엔지니어링 흐름 (최소 설명)
+## 1. What it is
 
-과학·물리·엔지니어링 관점에서, 어떤 개념이 어떤 수식으로 이어지고 **왜 이 순서로 흐르는지**만 최소한으로 정리한다.
-
-### 테라포밍과 탐사 파이프라인
-
-**테라포밍(terraforming)**은 행성을 인간·생명이 살 수 있는 환경으로 바꾸는 것을 가리킨다.  
-이 엔진은 **행성이 정주·개입 대상으로서 가치가 있는지**를 **단계적으로 탐사**하는 파이프라인이다.  
-입력은 행성의 물리·환경 상태를 담은 **스냅샷(PlanetSnapshot)** 하나이고, 파이프라인을 한 번 흐르면 거시 평가 → 6도메인 리스크 → 에덴 후보 → 테라포밍 권장 조치가 **순서대로 도출**된다.
-
-### 왜 JOE → MOE → Cherubim → Plan 순서로 흐르는가 (공학적 타당성)
-
-- **JOE (거시)**: 기초 물리(질량·회전·판 구조·수량 등)만 보고, 구조적 붕괴·대기 소실 가능성이 큰 행성을 **먼저 걸러** 나간다. → 이후 단계 리소스를 그쪽에 쓰지 않도록 한다.
-- **MOE (미시)**: JOE를 통과한 행성에 대해 **대기·수순환·지구물리·자기권·자전궤도·생물창** 6도메인 리스크를 정밀 진단한다. → 개입이 필요한 영역이 **어디인지 드러나게** 하고, Plan이 그에 맞춰 조치를 뽑을 수 있게 한다.
-- **Cherubim (선정)**: MOE의 6도메인 리스크를 **거주 적합도**로 바꾸어, 임계값 이상인 지역을 **에덴(Eden) 후보**로 둔다. → 어디에 먼저 정주·국소 테라포밍을 시도할지 **우선순위가 나오도록** 한다.
-- **Plan (개입)**: MOE의 `domain_scores`가 임계치를 넘는 도메인에 대해, 대기 보강·자기권 보조·수권 안정화·생물창 확보 등 **룰 기반 권장 조치가 도출**된다.
-
-정리하면, **진단(거시 → 미시) → 선정(거주지) → 계획(개입)** 순서로, **동일한 스냅샷 하나**가 파이프라인을 따라 흐르며 각 단계에서 **결과만 덧붙여** 다음 단계로 전달된다.
-
-### 단계별 개념·수식 (구현된 것만)
-
-각 단계는 **스냅샷을 읽어** 지표를 만들고, 그 결과가 다음 단계로 **흘러가도록** 되어 있다.
-
-#### 1) JOE — 거시 물리 1차 필터
-
-JOE는 **6개 스냅샷 키**만 읽어, 두 개의 **가중 합**과 **정규화·라벨**을 만든다.  
-(중력·탈출속도·회전 안정성 등은 이 패키지 밖에서 계산되어 스냅샷에 이미 들어온다고 가정한다.)
-
-- **행성 스트레스 (현상적 지표)**  
-  `planet_stress_raw` = a₁·σ_plate + a₂·(P_w/p_ref) + a₃·S_rot + a₄·(W_surface/W_total) + a₅·dW_surface_dt_norm  
-  → [ref_min, ref_max] 구간으로 선형 정규화한 값이 `planet_stress` (0~1).
-
-- **불안정도 (붕괴·소실 위험 proxy)**  
-  `instability_raw` = b₁·planet_stress + b₂·(W_surface/W_total) + b₃·dW_surface_dt_norm  
-  → [0,1]로 포화한 값이 `instability`.
-
-- **거주가능성 라벨**  
-  stress 또는 instability 구간에 따라 `"extreme"` ~ `"high"` 네 단계로 부여된다. (0.7 이상 → extreme, 0.4 이상 → low, 0.2 이상 → moderate, 그 외 → high.)
-
-계수 a₁~a₅, b₁~b₃, p_ref, ref_min, ref_max는 `config`로 주입되며, 재현·감사용으로 리포트에 기록된다.
-
-#### 2) MOE — 6도메인 리스크
-
-MOE는 스냅샷의 **프록시 키**를 도메인별로 묶어, 각 도메인당 **리스크 점수 [0,1]**를 낸다.  
-(1에 가까울수록 위험, 0에 가까울수록 양호.)
-
-| 도메인 | 의미 | 사용 키 (요지) |
-|--------|------|----------------|
-| atmosphere_risk | 대기·온실·알베도 | greenhouse_proxy, tau_atm, albedo_eff |
-| water_cycle_risk | 수순환 안정성 | hydrology_stability_proxy, dW_surface_dt_norm |
-| geophysics_risk | 판·열류·화산 | sigma_plate, heat_flux_proxy, volcanism_proxy |
-| magnetosphere_risk | 대기 제거·자기장 | strip_risk_proxy, B_surface_equator_proxy |
-| rotation_orbit_risk | 자전·기후 변동·계절성 | S_rot, climate_variance_proxy, seasonality_proxy |
-| biosphere_window_risk | 생물창 개방도 | biosphere_window_score (**invert**: 높을수록 좋음 → 리스크 = 1−score) |
-
-각 도메인 점수 = 해당 키들의 [0,1] 정규화값 평균 (invert 있는 도메인은 1−값).  
-결과는 `domain_scores`(도메인별 리스크)와 `attribution`(키별 기여)로 **도출**된다.
-
-#### 3) Cherubim — 에덴 후보
-
-MOE의 `domain_scores`를 **거주 적합도**로 바꾼다.  
-**적합도** = 도메인별 가중평균(1 − risk).  
-가중치 기본값은 geophysics_risk·biosphere_window_risk 쪽을 약간 높게 둔다.  
-적합도가 **eden_threshold**(기본 0.4) 이상이면 전역 1건을 에덴 후보로 넣고, `best_site`, `score`, `reasoning`(도메인별 기여 상위)을 채운다. → **선정 이유(reasoning)**가 함께 나와, 사용자가 “왜 이 후보인가”를 따라갈 수 있게 한다.
-
-#### 4) Plan — 개입 가이드
-
-MOE의 `domain_scores`를 보고, **domain_scores[도메인] ≥ 0.5**이면 해당 도메인에 대한 권장 조치(대기 보강·자기권 보조·수권 안정화·생물창 등)를 **추가**한다.  
-geophysics ≥ 0.6이면 별도 플래그를 세우는 등 룰이 있으며, 우선순위는 점수 구간에 따라 high/medium으로 나뉜다.  
-→ 도메인별 테라포밍 장비·명령 세트는 plan.py에서 더 세부화할 수 있다.
-
-### 파라미터 의미 (물리·공학 관점)
-
-스냅샷 키가 물리적으로 무엇을 proxy 하는지, 엔지니어가 코드 없이도 "무슨 입력인지" 알 수 있도록 요약한다.
-
-| 키 | 물리·공학적 의미 |
-|----|------------------|
-| **sigma_plate** | 판 구조/텍토닉 활성도 proxy. [0,1] 권장. 높을수록 지질적으로 불안정·위험. |
-| **P_w** | 내부 유체 압력 proxy. JOE에서 p_ref로 나누어 스트레스 항에 기여. |
-| **S_rot** | 자전 안정성 지표. [0,1]. 문서상 S_rot∝(ω²R)/g 등으로 정의될 수 있음(본 패키지는 스냅샷 입력만 사용). |
-| **W_surface** | 표면 수량(질량·부피 등 단위 통일된 값). |
-| **W_total** | 총 수량. W_surface/W_total = 표면 수량 비율 → 스트레스·불안정도에 기여. |
-| **dW_surface_dt_norm** | 표면 수량 변화율의 정규화값. [0,1]. 빠른 증발/고갈이면 높음. |
-| **greenhouse_proxy** | 온실 효과 강도 proxy. 높을수록 대기 리스크 증가. |
-| **hydrology_stability_proxy** | 수순환 안정성. 낮을수록 water_cycle_risk 증가. |
-| **strip_risk_proxy** | 대기 제거(stripping) 위험. 높을수록 자기권 리스크. |
-| **biosphere_window_score** | 생물창 개방도 [0,1]. 1에 가까울수록 온도·압력 등 생존 가능 창이 넓음 → MOE에서는 invert되어 리스크로 변환. |
-
-자세한 키 목록·예시는 [PLANET_SNAPSHOT_SCHEMA.md](PLANET_SNAPSHOT_SCHEMA.md)를 참고하면 된다.
+**테라포밍**은 행성을 거주 가능하게 바꾸는 것을 가리킨다. 이 엔진은 행성이 정주·개입 대상으로서 가치가 있는지를 **단계적으로 탐사**하는 파이프라인이다. 입력은 **PlanetSnapshot(dict)** 하나, 출력은 한 번의 `run_survey()` 호출로 **report.joe**, **report.moe**, **report.cherubim**, **report.plan**, **report.summary**, **report.config_used** 가 도출된다. 엔진 간 상호 참조는 없고, **pipeline.py**에서만 JOE → MOE → Cherubim을 순차 호출한다.
 
 ---
 
-## 통합 탐사 파이프라인 (서사·기술)
+## 2. Quickstart
 
-파이프라인은 **행성 탄생 이전 물리 조건부터 최종 거주지 후보 및 개입 계획까지** 한 번에 흐르도록 되어 있다. 각 단계는 이전 단계 결과를 이용해 **탐사 범위가 좁혀지도록** 설계되어 있다.
-
-| 단계 | 엔진 | 서사적 위치 | 기술적 역할 | 테라포밍 연계 |
-|------|------|-------------|-------------|----------------|
-| **1** | **JOE** (Macro Physics) | Day 0 이전 거시 조건 탐색 | 기초 물리 뼈대로 구조적 안정성 지표 도출 | 붕괴·대기 소실 가능성 큰 경우 걸러져 리소스 낭비 완화 |
-| **2** | **MOE** (Micro Environment) | JOE를 통과한 행성 내부 환경 스캔 | 6도메인 리스크 정밀 진단 및 원인(Attribution) 도출 | 개입이 필요한 환경 요소가 드러남 |
-| **3** | **Cherubim** (Settlement Search) | MOE 진단 기반 거주구역 후보 | 리스크가 낮은 도메인 조합으로 에덴 후보·선정 이유 도출 | 국소 테라포밍(Eden 조성) 우선순위가 나옴 |
-| **4** | **Terraforming Plan** | 개입 가이드 | domain_scores 임계치 초과 시 룰 기반으로 환경 개선 조치 도출 | — |
-
-**Plan 분야별 개입 예시**
-
-- **대기(Atmosphere)**: 온실 가스 농도 조정, 복사 차폐막 설치 제안.
-- **자기권(Magnetosphere)**: 대기 소실(Strip risk) 방지용 인공 자기장 발생 장치 배치 제안.
-- **수순환(Water Cycle)**: 수권 안정화를 위한 인공 응축·강수 제어 시스템 제안.
-- **생물창(Biosphere)**: 생존 가능 온도·압력 창 확보를 위한 목표 수치 제시.
-
-**엔지니어링 설계·독립성 규칙**
-
-- **Architecture**: **pipeline.py**에서만 하위 엔진을 호출한다. JOE, MOE, Cherubim은 서로를 모르는 **상호 참조 원천 차단** 원칙을 따른다.
-- **Snapshot Protocol**: 모든 엔진은 **schema.py**에 정의된 공통 dict 규약을 사용해 데이터 연속성을 유지한다.
-- **확장성**: 역사 역추적(HDR)은 코어에 넣지 않고 **extensions/** 어댑터로 선택 사용하며, 미설치 시 **폴백(Fallback)** 로직이 동작한다.
-- **재현성·감사**: **config.py**에서 중앙 관리되는 계수가 리포트에 기록되어, 동일 탐사 결과를 재현할 수 있다.
-
----
-
-## 1. 아키텍처
-
-- **pipeline.py**에서만 JOE / MOE / Cherubim을 순차 호출. 엔진 간 상호 참조 **원천 차단**.
-- 공통 입력: **PlanetSnapshot(dict)** 하나. 파이프라인 레이어에서 결과만 합친다.
-
-```
-terraforming_engine/               # 단일 제품 리포지터리 루트
-├── README.md                      # 통합 엔진 명세 및 서사
-├── pyproject.toml
-├── requirements.txt               # 표준 라이브러리만 (비움)
-└── terraforming_engine/           # 최상위 파이프라인 패키지
-    ├── __init__.py                # run_survey(snapshot) 진입점
-    ├── pipeline.py                # JOE → MOE → Cherubim 순차 오케스트레이션
-    ├── schema.py                  # PlanetSnapshot 공통 규약 (Key 목록)
-    ├── plan.py                    # TerraformingPlan (환경 개선 정책) 생성
-    ├── report.py                  # TerraformingReport 정의
-    ├── config.py                  # CONFIG 단일 dict (재현성 관리)
-    ├── joe_engine/                # Stage 1: Macro Assessor (복사본)
-    ├── moe_engine/                # Stage 2: Micro Assessor (복사본)
-    ├── cherubim_engine/           # Stage 3: Eden Guard (복사본)
-    └── extensions/                # 선택 기능 (코어 아님)
-        └── history_reconstruction_adapter.py  # HDR 연동 시 어댑터만
-```
-
----
-
-## 2. 단계별 데이터 흐름 (Snapshot Protocol)
-
-| 단계 | 엔진 | 역할 |
-|------|------|------|
-| 1 | **JOE** | 거시 물리 조건으로 행성 구조적 안정성 지표 도출 → 1차 필터링 |
-| 2 | **MOE** | 스냅샷의 6도메인 리스크 정밀 진단 → 환경 디테일·attribution 도출 |
-| 3 | **Cherubim** | MOE 결과를 거주 적합도로 변환 → 에덴 후보·선정 이유 도출 |
-| 4 | **Plan** | 리스크 지표에 따라 대기 보강, 자기권 보조, 수권 안정화 등 권장 조치 도출 |
-
-**진단(JOE/MOE) → 선정(Cherubim) → 계획(Plan)** 이 한 줄로 흐르도록 설계되어 있다.
-
-### 결과 구조 (계약)
-
-- **report.joe**: PlanetAssessment (거시 평가)
-- **report.moe**: MoeAssessment (6도메인 진단)
-- **report.cherubim**: **EdenAssessment** — `candidate_sites`, `best_site`, `score`, `reasoning`, `summary`
-- **report.plan**: **TerraformingPlan** — `recommendations`, `actions` (domain/action/priority), `flags`, `feasibility`, `estimated_time`, `summary`
-
----
-
-## 3. 설계 원칙
-
-- **독립성**: `joe_engine`에서 `moe_engine` import 금지 등 엔진 간 직접 호출 **금지**. **pipeline.py**에서만 순서대로 호출.
-- **재현성·감사**: 모든 설정은 **config.py**에서 관리. 최종 리포트에 사용된 계수 포함 → 동일 탐사 결과 재현 가능.
-- **확장성**: 역사 역추적(HDR)은 코어에 넣지 않고 **extensions/** 에 어댑터 형태로 두어 선택 사용.
-
----
-
-## 핵심 개념·구조 재확인
-
-- **정의**: 행성이 정주·개입 대상으로서 가치가 있는지 **단계적으로 탐사**하는 파이프라인. 답을 고정으로 제시하기보다 **탐사가 흐르면서** 후보·리스크·에덴·권장 조치가 **나오게** 만든다.
-- **탐사 순서의 공학적 타당성**: JOE로 거시 필터 → MOE로 6도메인 리스크 도출 → Cherubim으로 거주 적합도·에덴 후보 도출 → Plan으로 개입 가이드 도출.
-- **사용·배포**: CLI `python -m terraforming_engine` 으로 JSON 스냅샷을 넣으면 파이프라인이 한 번 흐른다. config가 리포트에 기록되므로 재현 가능하다.
-
-## 4. 설치 및 사용
+**설치**
 
 ```bash
 pip install -e .
 # 또는
 pip install .
 ```
+
+**Python: run_survey**
 
 ```python
 from terraforming_engine import run_survey
@@ -224,43 +45,86 @@ python -m terraforming_engine
 python -m terraforming_engine /path/to/snapshot.json
 ```
 
-### 확장: 역사 역추적(HDR) 어댑터
+---
 
-코어 `run_survey()`에서는 호출하지 않음. 선택 사용:
+## 3. Pipeline overview (JOE → MOE → Cherubim → Plan)
 
-```python
-from terraforming_engine.extensions import hdr_is_available, reconstruct_origin_from_snapshots
+왜 이 순서인가:
 
-# 스냅샷 시퀀스에서 기원(origin) 스냅샷 추출. HDR 미설치 시 timestamp 기준 가장 과거 1건 반환(폴백).
-snapshots = [
-    {"snapshot": {...}, "timestamp": 0.0, "source": "terraforming"},
-    {"snapshot": {...}, "timestamp": 1.0, "source": "terraforming"},
-]
-origin = reconstruct_origin_from_snapshots(snapshots)
-# HDR 설치 여부
-print(hdr_is_available())
+- **JOE (거시)**: 기초 물리만 보고 구조적 붕괴·대기 소실 가능성이 큰 행성을 먼저 걸러서, 이후 단계 리소스 낭비를 줄인다.
+- **MOE (미시)**: 6도메인(대기·수순환·지구물리·자기권·자전궤도·생물창) 리스크를 진단해 개입이 필요한 영역이 드러나게 한다.
+- **Cherubim**: MOE 리스크를 거주 적합도로 바꿔 에덴 후보와 선정 이유(reasoning)가 도출되게 한다.
+- **Plan**: domain_scores 임계치를 넘는 도메인에 대해 대기 보강·자기권 보조·수권 안정화·생물창 등 룰 기반 권장 조치가 도출된다.
+
+진단(거시→미시) → 선정(거주지) → 계획(개입). 동일 스냅샷 하나가 파이프라인을 따라 흐르며 각 단계에서 결과만 덧붙여 전달된다.
+
+---
+
+## 4. Math implemented (JOE, MOE 핵심만)
+
+**JOE**
+
+- `planet_stress_raw` = a₁·σ_plate + a₂·(P_w/p_ref) + a₃·S_rot + a₄·(W_surface/W_total) + a₅·dW_surface_dt_norm → [ref_min, ref_max]로 정규화 → `planet_stress`.
+- `instability_raw` = b₁·planet_stress + b₂·(W_surface/W_total) + b₃·dW_surface_dt_norm → [0,1] 포화 → `instability`.
+- stress/instability 구간에 따라 habitability 라벨: extreme / low / moderate / high.
+
+**MOE**
+
+- 6도메인별로 스냅샷 키를 묶어 [0,1] 리스크 점수. 각 도메인 = 해당 키들의 [0,1] 정규화값 평균. biosphere_window_score 는 **invert**(높을수록 좋음 → 리스크 = 1−score).
+- 결과: `domain_scores`, `attribution`.
+
+**핵심 스냅샷 키**: sigma_plate, P_w, S_rot, W_surface, W_total, dW_surface_dt_norm (JOE). greenhouse_proxy, hydrology_stability_proxy, strip_risk_proxy, biosphere_window_score 등 (MOE). 자세한 목록·의미는 [PLANET_SNAPSHOT_SCHEMA.md](PLANET_SNAPSHOT_SCHEMA.md).
+
+---
+
+## 5. PlanetSnapshot schema & Reproducibility
+
+- **스키마**: [PLANET_SNAPSHOT_SCHEMA.md](PLANET_SNAPSHOT_SCHEMA.md) 에 전체 엔진 계약(키 정의·예시)이 있다. README에서는 핵심 키만 언급한다.
+- **재현·감사**: 사용된 계수는 **config.py**에서 관리되며, `report.config_used` 에 기록된다. 동일 스냅샷·동일 config로 재현 가능. [SIGNATURE.md](SIGNATURE.md) 참고.
+
+---
+
+## 6. 현재 파일 구성 / 엔트리포인트 (배포 시 확인)
+
+README가 말하는 **방식 A 단일 패키지**가 동작하려면, 아래 구조와 엔트리포인트가 맞아야 한다. **루트에 파일을 평평하게(flat) 올리면 안 되고**, 반드시 **terraforming_engine/** 파이썬 패키지 디렉터리가 있어야 한다.
+
+**필수 디렉터리 구조**
+
+```
+리포 루트/
+├── README.md, pyproject.toml, requirements.txt, LICENSE, SIGNATURE.md, PLANET_SNAPSHOT_SCHEMA.md
+└── terraforming_engine/          # 파이썬 패키지 (이 폴더가 있어야 함)
+    ├── __init__.py               # run_survey, TerraformingReport 등 Terraforming Engine 전용 export
+    ├── __main__.py               # python -m terraforming_engine 용 CLI
+    ├── pipeline.py, plan.py, report.py, schema.py, config.py
+    ├── joe_engine/
+    ├── moe_engine/
+    ├── cherubim_engine/
+    └── extensions/               # 선택 (없으면 HDR 미적용)
+        └── history_reconstruction_adapter.py
 ```
 
----
+**엔트리포인트 체크**
 
-## 5. 버전
+- `terraforming_engine/__init__.py` 는 **Terraforming Engine**용이어야 한다. `run_survey`, `TerraformingReport`, `TerraformingPlan` 등을 export. (다른 엔진의 Moe_Engine/Joe_Engine API를 export하면 안 됨.)
+- `terraforming_engine/__main__.py` 는 **Terraforming Engine CLI**용이어야 한다. `from terraforming_engine import run_survey` 로 호출하고, `python -m terraforming_engine` / `python -m terraforming_engine /path/to/snapshot.json` 이 동작해야 한다. (Joe_Engine 전용 CLI 구조면 안 됨.)
 
-0.2.0 — Cherubim 적합도·에덴 후보/score/reasoning 도출 로직. HDR 어댑터 연동(폴백 포함).  
-**PlanetSnapshot 표준** → [PLANET_SNAPSHOT_SCHEMA.md](PLANET_SNAPSHOT_SCHEMA.md).
+배포·업로드 시 루트에 `__init__.py`, `__main__.py` 만 두고 `terraforming_engine/` 폴더를 빼면, `from terraforming_engine import run_survey` 와 `python -m terraforming_engine` 가 성립하지 않는다. 반드시 위 구조를 유지할 것.
 
-**다음 단계 가이드**: plan.py에서 도메인별 테라포밍 장비·명령 세트를 더 세부화하거나, Cherubim 선정 알고리즘을 코드로 더 구체화할 수 있다. 수정 후에는 `bash push_to_github.sh` 로 GitHub에 반영한다.
+**확장(선택)**  
+`extensions/` 에 역사 역추적(HDR) 어댑터가 있으면 선택 사용. 해당 디렉터리·파일이 없으면 해당 기능은 미적용.
 
----
-
-## 6. 수정 후 GitHub 푸시 (필수)
-
-**규칙**: 코드·문서를 수정하면 **커밋 + GitHub 푸시**까지 완료한다.
+**수정 후 GitHub 푸시**
 
 ```bash
-cd /Users/jazzin/Desktop/00_BRAIN/ENGINE_HUB/Terraforming_Engine
+cd /path/to/Terraforming_Engine
 bash setup_git_and_push.sh
 # 또는
 bash push_to_github.sh
 ```
 
 자세한 안내: [PUSH_AFTER_EDIT.md](PUSH_AFTER_EDIT.md).
+
+---
+
+**버전**: 0.2.0. 다음 보강: plan.py 도메인별 테라포밍 장비·명령 세트 세부화, Cherubim 선정 알고리즘 코드 구체화.
