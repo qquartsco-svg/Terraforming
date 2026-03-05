@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "terraforming-engine"
+version = "0.1.0"
+description = "JOE → MOE → Cherubim 오케스트레이션 + TerraformingPlan 단일 패키지"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = []
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["terraforming_engine*"]
+
+[tool.setuptools.package-dir]
+"" = "."
